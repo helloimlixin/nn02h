@@ -1,0 +1,40 @@
+{
+  "os": "Windows-10-10.0.22631-SP0",
+  "python": "CPython 3.11.5",
+  "startedAt": "2025-01-01T01:37:24.529931Z",
+  "program": "mlops/notebooks/wandb_versioning_demo.ipynb",
+  "git": {
+    "remote": "https://github.com/helloimlixin/nn02h.git",
+    "commit": "d01f0ae071f0b57671c81618c64124a293f22b42"
+  },
+  "email": "helloimlixin@gmail.com",
+  "root": "C:\\Projects\\nn02h\\mlops\\notebooks",
+  "host": "xinli-alienware",
+  "executable": "C:\\Users\\hello\\anaconda3\\envs\\research\\python.exe",
+  "cpu_count": 16,
+  "cpu_count_logical": 24,
+  "gpu": "NVIDIA GeForce RTX 4080",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "1001310384128",
+      "used": "912561086464"
+    }
+  },
+  "memory": {
+    "total": "16884838400"
+  },
+  "cpu": {
+    "count": 16,
+    "countLogical": 24
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GeForce RTX 4080",
+      "memoryTotal": "17171480576",
+      "cudaCores": 9728,
+      "architecture": "Ada"
+    }
+  ],
+  "cudaVersion": "12.6"
+}

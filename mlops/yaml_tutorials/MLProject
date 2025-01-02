@@ -1,0 +1,23 @@
+name: download_data
+conda_env: conda.yaml  # conda environment specification file instead of docker image
+entry_points:
+  main:  # default entry point
+    parameters:
+      file_url:
+        description: URL of the file to download
+        type: uri
+      artifact_name:
+        description: Name of the artifact to save
+        type: str
+        default: raw_data.csv
+
+    command: >-
+      python download_data.py --file_url {file_url} --artifact_name {artifact_name}  # command to run, {} are placeholders for parameters
+
+other_script:  # another entry point
+  parameters:
+    parameter_one:
+        description: Description of parameter one
+        type: str
+  command: julia other_script.jl {parameter_one}
+
