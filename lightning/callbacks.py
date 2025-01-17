@@ -1,5 +1,6 @@
 from pytorch_lightning.callbacks import EarlyStopping, Callback
 
+
 class MyPrintingCallback(Callback):
     def __init__(self):
         super(MyPrintingCallback, self).__init__()

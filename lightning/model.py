@@ -3,7 +3,7 @@ from torch import nn, optim, Tensor
 from typing import Any
 import pytorch_lightning as pl
 import torchmetrics
-
+import torchvision
 
 # from torchmetrics import Metric
 
@@ -25,6 +25,7 @@ import torchmetrics
 #     def compute(self):
 #         return self.correct.float() / self.total.float()
 
+
 class SimpleNet(pl.LightningModule):
     def __init__(self, in_channels, learning_rate, num_classes):
         super(SimpleNet, self).__init__()
@@ -32,14 +33,12 @@ class SimpleNet(pl.LightningModule):
         self.fc1 = nn.Linear(in_channels, 50)
         self.fc2 = nn.Linear(50, num_classes)
         self.loss_fn = nn.CrossEntropyLoss()
-        self.accuracy = torchmetrics.Accuracy(task="multiclass", num_classes=num_classes)
+        self.accuracy = torchmetrics.Accuracy(
+            task="multiclass", num_classes=num_classes
+        )
         self.f1_score = torchmetrics.F1Score(task="multiclass", num_classes=num_classes)
 
-        self.net = nn.Sequential(
-            self.fc1,
-            nn.ReLU(),
-            self.fc2
-        )
+        self.net = nn.Sequential(self.fc1, nn.ReLU(), self.fc2)
 
     def forward(self, x):
         return self.net(x)
@@ -58,11 +57,27 @@ class SimpleNet(pl.LightningModule):
         return loss, scores, y
 
     def training_step(self, batch, batch_index):
+        x, y = batch
         loss, scores, y = self._inference_step(batch, batch_index)
         accuracy = self.accuracy(scores, y)
         f1_score = self.f1_score(scores, y)
-        self.log_dict({"train_loss": loss, "train_accuracy": accuracy, "train_f1_score": f1_score},
-                      on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        self.log_dict(
+            {
+                "train_loss": loss,
+                "train_accuracy": accuracy,
+                "train_f1_score": f1_score,
+            },
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
+
+        if batch_index % 100 == 0:
+            x = x[:8]
+            grid = torchvision.utils.make_grid(x.view(-1, 1, 28, 28))
+            self.logger.experiment.add_image("input_images", grid, self.global_step)
+
         return loss
 
     def validation_step(self, batch, batch_index):
@@ -74,8 +89,13 @@ class SimpleNet(pl.LightningModule):
         loss, scores, y = self._inference_step(batch, batch_index)
         accuracy = self.accuracy(scores, y)
         f1_score = self.f1_score(scores, y)
-        self.log_dict({"test_loss": loss, "test_accuracy": accuracy, "test_f1_score": f1_score},
-                      on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        self.log_dict(
+            {"test_loss": loss, "test_accuracy": accuracy, "test_f1_score": f1_score},
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
         return loss
 
     def predict_step(self, batch, batch_index):

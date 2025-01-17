@@ -22,29 +22,50 @@ class MNISTDataModule(pl.LightningDataModule):
 
     def setup(self, stage: str):
         # multi gpus, load after prepare_data
-        entire_dataset = datasets.MNIST(root=self.data_dir,
-                                        train=True,
-                                        transform=transforms.ToTensor(),
-                                        download=False)
-        self.train_dataset, self.val_dataset = random_split(entire_dataset, [55000, 5000])
-        self.test_dataset = datasets.MNIST(root=self.data_dir,
-                                           train=False,
-                                           transform=transforms.ToTensor(),
-                                           download=False)
+        entire_dataset = datasets.MNIST(
+            root=self.data_dir,
+            train=True,
+            transform=transforms.Compose(
+                [
+                    transforms.RandomVerticalFlip(),
+                    transforms.RandomHorizontalFlip(),
+                    transforms.ToTensor(),
+                ]
+            ),
+            download=False,
+        )
+        self.train_dataset, self.val_dataset = random_split(
+            entire_dataset, [55000, 5000]
+        )
+        self.test_dataset = datasets.MNIST(
+            root=self.data_dir,
+            train=False,
+            transform=transforms.ToTensor(),
+            download=False,
+        )
 
     def train_dataloader(self):
-        return DataLoader(self.train_dataset,
-                          batch_size=self.batch_size,
-                          num_workers=self.num_workers,
-                          persistent_workers=True,
-                          shuffle=True)
+        return DataLoader(
+            self.train_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            persistent_workers=True,
+            shuffle=True,
+        )
 
     def val_dataloader(self):
-        return DataLoader(self.val_dataset,
-                          batch_size=self.batch_size,
-                          num_workers=self.num_workers,
-                          persistent_workers=True,
-                          shuffle=False)
+        return DataLoader(
+            self.val_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            persistent_workers=True,
+            shuffle=False,
+        )
 
     def test_dataloader(self):
-        return DataLoader(self.test_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
+        return DataLoader(
+            self.test_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=False,
+        )
