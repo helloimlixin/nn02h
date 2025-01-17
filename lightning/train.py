@@ -6,11 +6,16 @@ import config
 import pytorch_lightning as pl
 from callbacks import MyPrintingCallback, EarlyStopping
 from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.profilers import PyTorchProfiler
 
 if __name__ == "__main__":
     freeze_support()
 
-    logger = TensorBoardLogger("tb_logs", name="mnist_model_v0")
+    logger = TensorBoardLogger("tb_logs", name="mnist_model_v1")
+    profiler = PyTorchProfiler(
+        on_trace_ready=torch.profiler.tensorboard_trace_handler("tb_logs/profiler0"),
+        scheduler=torch.profiler.schedule(skip_first=10, wait=1, warmup=1, active=20)
+    )
 
     # Initialize network
     model = SimpleNet(
@@ -27,6 +32,7 @@ if __name__ == "__main__":
     )
 
     trainer = pl.Trainer(
+        profiler=profiler,
         logger=logger,
         accelerator=config.ACCELERATOR,
         devices=config.DEVICES,
