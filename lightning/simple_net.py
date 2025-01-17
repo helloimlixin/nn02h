@@ -1,4 +1,5 @@
 # A simple neural network for demo
+from multiprocessing import freeze_support
 from typing import Any
 
 import torch
@@ -10,6 +11,7 @@ from torch.utils.data import random_split
 import pytorch_lightning as pl
 import torchmetrics
 from torchmetrics import Metric
+
 
 class MyAccuracy(Metric):
     def __init__(self):
@@ -25,6 +27,7 @@ class MyAccuracy(Metric):
 
     def compute(self):
         return self.correct.float() / self.total.float()
+
 
 class SimpleNet(pl.LightningModule):
     def __init__(self, in_channels, num_classes):
@@ -88,64 +91,75 @@ class SimpleNet(pl.LightningModule):
         return optim.Adam(self.parameters(), lr=0.001)
 
 
-# set device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+class MNISTDataModule(pl.LightningDataModule):
+    def __init__(self, data_dir, batch_size, num_workers):
+        super().__init__()
+        self.train_dataset = None
+        self.val_dataset = None
+        self.test_dataset = None
+        self.data_dir = data_dir
+        self.batch_size = batch_size
+        self.num_workers = num_workers
 
-# Hyperparameters
-in_features = 28 * 28
-n_classes = 10
-learning_rate = 0.001
-batch_size = 64
-num_epochs = 5
+    def prepare_data(self):
+        # single gpu, for downloading
+        datasets.MNIST(root=self.data_dir, train=True, download=True)
+        datasets.MNIST(root=self.data_dir, train=False, download=True)
 
-# Load Data
-train_dataset = datasets.MNIST(root="dataset/", train=True, transform=transforms.ToTensor(), download=True)
-train_set, val_set = random_split(train_dataset, [55000, 5000])
-test_dataset = datasets.MNIST(root="dataset/", train=False, transform=transforms.ToTensor(), download=True)
+    def setup(self, stage: str):
+        # multi gpus, load after prepare_data
+        entire_dataset = datasets.MNIST(root=self.data_dir,
+                                        train=True,
+                                        transform=transforms.ToTensor(),
+                                        download=False)
+        self.train_dataset, self.val_dataset = random_split(entire_dataset, [55000, 5000])
+        self.test_dataset = datasets.MNIST(root=self.data_dir,
+                                           train=False,
+                                           transform=transforms.ToTensor(),
+                                           download=False)
 
-train_loader = DataLoader(dataset=train_set, batch_size=batch_size, shuffle=True)
-val_loader = DataLoader(dataset=val_set, batch_size=batch_size, shuffle=False)
-test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
+    def train_dataloader(self):
+        return DataLoader(self.train_dataset,
+                          batch_size=self.batch_size,
+                          num_workers=self.num_workers,
+                          persistent_workers=True,
+                          shuffle=True)
 
-# Initialize network
-model = SimpleNet(in_channels=in_features, num_classes=n_classes).to(device)
+    def val_dataloader(self):
+        return DataLoader(self.val_dataset,
+                          batch_size=self.batch_size,
+                          num_workers=self.num_workers,
+                            persistent_workers=True,
+                          shuffle=False)
 
-# Loss and optimizer
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-
-trainer = pl.Trainer(accelerator="gpu", devices=[0], min_epochs=1, max_epochs=num_epochs, precision=16)
-# trainer.tune(model, train_loader)  # find the best hyperparameters
-trainer.fit(model, train_loader, val_loader)
-trainer.validate(model, val_loader)
-trainer.test(model, test_loader)
-
-
-# Check accuracy on training & test to see how good our model
-def check_accuracy(loader):
-    num_correct = 0
-    num_samples = 0
-    model.eval()
-
-    with torch.no_grad():
-        for x, y in loader:
-            x = x.to(device=device)
-            y = y.to(device=device)
-
-            x = x.reshape(x.shape[0], -1)
-
-            scores = model(x)
-            _, predictions = scores.max(1)
-            num_correct += (predictions == y).sum()
-            num_samples += predictions.size(0)
-
-    model.train()
-    return num_correct / num_samples
+    def test_dataloader(self):
+        return DataLoader(self.test_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
 
 
-# Print accuracy
-model.eval()
-model.to(device)
-print(f"Accuracy on training set: {check_accuracy(train_loader) * 100:.2f} %")
-print(f"Accuracy on validation set: {check_accuracy(val_loader) * 100:.2f} %")
-print(f"Accuracy on test set: {check_accuracy(test_loader) * 100:.2f} %")
+if __name__ == "__main__":
+    freeze_support()
+
+    # set device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Hyperparameters
+    in_features = 28 * 28
+    n_classes = 10
+    learning_rate = 0.001
+    batch_size = 64
+    num_epochs = 5
+
+    # Initialize network
+    model = SimpleNet(in_channels=in_features, num_classes=n_classes).to(device)
+
+    # Initialize data module
+    datamodule = MNISTDataModule(data_dir="data", batch_size=batch_size, num_workers=4)
+
+    trainer = pl.Trainer(accelerator="gpu", devices=[0], min_epochs=1, max_epochs=num_epochs, precision=64)
+    # trainer.tune(model, train_loader)  # find the best hyperparameters
+    torch.set_float32_matmul_precision('medium')
+    trainer.fit(model, datamodule)
+    trainer.validate(model, datamodule)
+    trainer.test(model, datamodule)
+
+
