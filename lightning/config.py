@@ -7,9 +7,9 @@ NUM_EPOCHS = 100
 
 # Dataset
 DATA_DIR = "data"
-NUM_WORKERS = 4
+NUM_WORKERS = 1
 
 # Compute
 ACCELERATOR = "gpu"
 DEVICES = [0, 1]
-PRECISION = 64
+PRECISION = 32

@@ -3,15 +3,17 @@ import torch
 from dataset import MNISTDataModule
 from model import SimpleNet
 import config
-import pytorch_lightning as pl
+import lightning as pl
 from callbacks import MyPrintingCallback, EarlyStopping
-from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning.profilers import PyTorchProfiler
+from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.profilers import PyTorchProfiler
+from lightning.pytorch.strategies import DeepSpeedStrategy
 
 if __name__ == "__main__":
     freeze_support()
 
     logger = TensorBoardLogger("tb_logs", name="mnist_model_v1")
+    strategy = DeepSpeedStrategy()
     profiler = PyTorchProfiler(
         on_trace_ready=torch.profiler.tensorboard_trace_handler("tb_logs/profiler0"),
         scheduler=torch.profiler.schedule(skip_first=10, wait=1, warmup=1, active=20)
@@ -32,7 +34,7 @@ if __name__ == "__main__":
     )
 
     trainer = pl.Trainer(
-        strategy="ddp",  # copy the model to each GPU, linear scaling
+        strategy=strategy,  # copy the model to each GPU, linear scaling
         profiler=profiler,
         logger=logger,
         accelerator=config.ACCELERATOR,
@@ -45,5 +47,3 @@ if __name__ == "__main__":
     # trainer.tune(model, train_loader)  # find the best hyperparameters
     torch.set_float32_matmul_precision("medium")
     trainer.fit(model, datamodule)
-    trainer.validate(model, datamodule)
-    trainer.test(model, datamodule)

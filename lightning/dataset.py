@@ -2,7 +2,7 @@ import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
-import pytorch_lightning as pl
+import lightning as pl
 
 
 class MNISTDataModule(pl.LightningDataModule):
