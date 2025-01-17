@@ -11,5 +11,5 @@ NUM_WORKERS = 4
 
 # Compute
 ACCELERATOR = "gpu"
-DEVICES = [0]
+DEVICES = [0, 1]
 PRECISION = 64

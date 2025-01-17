@@ -32,6 +32,7 @@ if __name__ == "__main__":
     )
 
     trainer = pl.Trainer(
+        strategy="ddp",  # copy the model to each GPU, linear scaling
         profiler=profiler,
         logger=logger,
         accelerator=config.ACCELERATOR,
