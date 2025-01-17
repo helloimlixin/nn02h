@@ -5,6 +5,7 @@ from dataset import MNISTDataModule
 from model import SimpleNet
 import config
 import pytorch_lightning as pl
+from callbacks import MyPrintingCallback, EarlyStopping
 
 if __name__ == "__main__":
     freeze_support()
@@ -22,7 +23,8 @@ if __name__ == "__main__":
     trainer = pl.Trainer(accelerator=config.ACCELERATOR,
                          devices=config.DEVICES,
                          min_epochs=1, max_epochs=config.NUM_EPOCHS,
-                         precision=config.PRECISION)
+                         precision=config.PRECISION,
+                         callbacks=[MyPrintingCallback(), EarlyStopping(monitor="val_loss")])
     # trainer.tune(model, train_loader)  # find the best hyperparameters
     torch.set_float32_matmul_precision('medium')
     trainer.fit(model, datamodule)
