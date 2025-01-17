@@ -2,23 +2,39 @@
 from typing import Any
 
 import torch
-from accelerate.test_utils import device_count
-from pytorch_lightning.utilities.types import STEP_OUTPUT
 from torch import nn, optim, Tensor
-import torch.nn.functional as F
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
-from tqdm.auto import tqdm
 from torch.utils.data import random_split
 import pytorch_lightning as pl
+import torchmetrics
+from torchmetrics import Metric
 
+class MyAccuracy(Metric):
+    def __init__(self):
+        super().__init__()
+        self.add_state("correct", default=torch.tensor(0), dist_reduce_fx="sum")
+        self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
+
+    def update(self, preds: Tensor, target: Tensor):
+        preds = torch.argmax(preds, dim=1)
+        assert preds.shape == target.shape
+        self.correct += torch.sum(torch.eq(preds, target))
+        self.total += target.numel()
+
+    def compute(self):
+        return self.correct.float() / self.total.float()
 
 class SimpleNet(pl.LightningModule):
     def __init__(self, in_channels, num_classes):
         super(SimpleNet, self).__init__()
         self.fc1 = nn.Linear(in_channels, 50)
         self.fc2 = nn.Linear(50, num_classes)
+        self.loss_fn = nn.CrossEntropyLoss()
+        self.accuracy = torchmetrics.Accuracy(task="multiclass", num_classes=num_classes)
+        self.my_accuracy = MyAccuracy()
+        self.f1_score = torchmetrics.F1Score(task="multiclass", num_classes=num_classes)
 
         self.net = nn.Sequential(
             self.fc1,
@@ -38,13 +54,16 @@ class SimpleNet(pl.LightningModule):
         x, y = batch
         x = x.view(x.size(0), -1)
         scores = self.forward(x)
-        loss = F.cross_entropy(scores, y)
+        loss = self.loss_fn(scores, y)
 
         return loss, scores, y
 
     def training_step(self, batch, batch_index):
-        loss, _, _ = self._inference_step(batch, batch_index)
-        self.log("train_loss", loss)
+        loss, scores, y = self._inference_step(batch, batch_index)
+        accuracy = self.my_accuracy(scores, y)
+        f1_score = self.f1_score(scores, y)
+        self.log_dict({"train_loss": loss, "train_accuracy": accuracy, "train_f1_score": f1_score},
+                      on_step=False, on_epoch=True, prog_bar=True, logger=True)
         return loss
 
     def validation_step(self, batch, batch_index):
