@@ -1,13 +1,11 @@
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
-from torch.utils import data
-from torch.utils.data import DataLoader
-from torch.utils.data import random_split
+from torch.utils.data import DataLoader, random_split
 import lightning as pl
 
 
-def discretize(imgs):
-    return (imgs*255).long()  # [0, 1] -> [0, 255], float -> long
+def discretize(images):
+    return images * 255  # [0, 1] -> [0, 255]
 
 class MNISTDataModule(pl.LightningDataModule):
     def __init__(self, data_dir, batch_size=32, num_workers=0):
@@ -37,7 +35,7 @@ class MNISTDataModule(pl.LightningDataModule):
             download=False,
         )
 
-        self.train_dataset, self.val_dataset = data.random_split(
+        self.train_dataset, self.val_dataset = random_split(
             entire_dataset, [55_000, 5_000]
         )
 
@@ -49,7 +47,7 @@ class MNISTDataModule(pl.LightningDataModule):
         )
 
     def train_dataloader(self):
-        return data.DataLoader(
+        return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
@@ -57,7 +55,7 @@ class MNISTDataModule(pl.LightningDataModule):
         )
 
     def val_dataloader(self):
-        return data.DataLoader(
+        return DataLoader(
             self.val_dataset,
             batch_size=self.batch_size // 8,
             shuffle=False,
@@ -66,7 +64,7 @@ class MNISTDataModule(pl.LightningDataModule):
         )
 
     def test_dataloader(self):
-        return data.DataLoader(
+        return DataLoader(
             self.test_dataset,
             batch_size=self.batch_size // 8,
             shuffle=False,

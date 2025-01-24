@@ -5,6 +5,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 import lightning as pl
 from .utils import CausalConvolutionVStack, CausalConvolutionHStack, GatedMaskedCausalConvolution
+from tqdm.auto import tqdm
+
 
 class PixelCNN(pl.LightningModule):
     def __init__(self, in_channels, num_hiddens):
@@ -33,7 +35,7 @@ class PixelCNN(pl.LightningModule):
 
     def forward(self, x):
         # scale the input to the range [-1, 1]
-        x = (x.float() / 255.0) * 2 - 1
+        x = (x / 255.0) * 2 - 1
 
         # initial vertical and horizontal stacks
         vstack = self.vconv(x)
@@ -54,7 +56,7 @@ class PixelCNN(pl.LightningModule):
     def compute_likelihood(self, x):
         # compute the likelihood of the input
         preds = self.forward(x)
-        nll = F.cross_entropy(preds, x, reduction='none')
+        nll = F.cross_entropy(preds, x.long(), reduction='none')
         bpd = nll.mean(dim=[1, 2, 3]) * np.log2(np.exp(1))
 
         return bpd.mean()
@@ -67,7 +69,25 @@ class PixelCNN(pl.LightningModule):
         :param img: initial image to start the generation if given
         :return: generated image
         """
-        pass
+        if img is None:
+            img = torch.zeros(img_size).to(self.device) - 1
+
+        # generation
+        for h in tqdm(range(img_size[2]), desc='Generating', leave=False):
+            for w in range(img_size[3]):
+                for c in range(img_size[1]):
+                    # skip if the pixel is already generated
+                    if (img[0, c, h, w] != -1).all().item():
+                        continue
+                    # for efficient sampling, we only input the upper part of the image
+                    preds = self.forward(img[:, :, :h + 1, :])
+                    probs = F.softmax(preds[:, :, c, h, w], dim=-1)
+                    img[:, c, h, w] = torch.multinomial(probs, 1).squeeze(-1)
+
+        # scale the image back to [0, 1]
+        img /= 255.0
+
+        return img
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=1e-3)

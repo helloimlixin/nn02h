@@ -7,7 +7,7 @@ with PyTorch Lightning and especially its multi-GPU capabilities.
 To get started, you need to install PyTorch Lightning. You can do this using pip:
 
 ```bash
-pip install pytorch-lightning
+pip install lightning
 ```
 
 This tutorial major follows the YouTube tutorial by Aladdin Persson on PyTorch Lightning. You can find the tutorial [here](https://www.youtube.com/watch?v=QHww1JH7IDU).
