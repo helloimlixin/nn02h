@@ -1,13 +1,14 @@
 # Training Hyperparameters
-INPUT_SIZE = 28 * 28
-NUM_CLASSES = 10
+NUM_CHANNELS = 1
+NUM_HIDDENS = 64
 LEARNING_RATE = 0.001
-BATCH_SIZE = 64
-NUM_EPOCHS = 100
+BATCH_SIZE = 32
+NUM_EPOCHS = 10
 
 # Dataset
-DATA_DIR = "../data"
-NUM_WORKERS = 1
+DATA_DIR = "../../data"
+CHECKPOINT_DIR = "../../checkpoints"
+NUM_WORKERS = 0
 
 # Compute
 ACCELERATOR = "gpu"
