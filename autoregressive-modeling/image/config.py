@@ -1,5 +1,5 @@
 # Training Hyperparameters
-NUM_CHANNELS = 3
+NUM_CHANNELS = 1
 NUM_HIDDENS = 64
 LEARNING_RATE = 0.001
 BATCH_SIZE = 32

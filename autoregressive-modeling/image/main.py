@@ -43,7 +43,7 @@ if __name__ == "__main__":
     # strategy = DeepSpeedStrategy()
 
     # init datamodule
-    dataset_name = 'cifar10'
+    dataset_name = 'mnist'
     dm = None
     if dataset_name == 'mnist':
         dm = MNISTDataModule(config.DATA_DIR,
@@ -76,7 +76,7 @@ if __name__ == "__main__":
 
     # generation
     pl.seed_everything(1)
-    generated_img = model.sample((16, config.NUM_CHANNELS, 32, 32))
+    generated_img = model.sample((16, config.NUM_CHANNELS, 28, 28))
     save_image(generated_img, f'generated-{dataset_name}.png')
     print(f"Image generated and saved as 'generated-{dataset_name}.png'")
 
