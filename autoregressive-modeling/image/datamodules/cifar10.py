@@ -3,10 +3,11 @@ from torchvision.datasets import CIFAR10
 import lightning as pl
 from torchvision.transforms import transforms
 from torch.utils.data import random_split, DataLoader
+from torchvision.utils import save_image, make_grid
 
 
-def discretize(images):
-    return images * 255  # [0, 1] -> [0, 255]
+def discretize(x):
+    return (x * 255).clamp(0, 255).long()
 
 
 class CIFAR10DataModule(pl.LightningDataModule):
@@ -36,6 +37,11 @@ class CIFAR10DataModule(pl.LightningDataModule):
             download=False,
         )
 
+        # save first 8 images for visualization
+        images = [entire_dataset[i][0] / 255.0 for i in range(8)]
+        grid = make_grid(images, nrow=4)
+        save_image(grid, "cifar10.png")
+
         self.train_dataset, self.val_dataset = random_split(
             entire_dataset, [45_000, 5_000]
         )
@@ -43,7 +49,12 @@ class CIFAR10DataModule(pl.LightningDataModule):
         self.test_dataset = CIFAR10(
             root=self.data_dir,
             train=False,
-            transform=transforms.ToTensor(),
+            transform=transforms.Compose(
+                [
+                    transforms.ToTensor(),
+                    discretize
+                ]
+            ),
             download=False
         )
 

@@ -3,9 +3,8 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, random_split
 import lightning as pl
 
-
-def discretize(images):
-    return images * 255  # [0, 1] -> [0, 255]
+def discretize(x):
+    return (x * 255).clamp(0, 255).long()
 
 class MNISTDataModule(pl.LightningDataModule):
     def __init__(self, data_dir, batch_size=32, num_workers=0):
@@ -30,6 +29,7 @@ class MNISTDataModule(pl.LightningDataModule):
                 [
                     transforms.ToTensor(),
                     discretize
+
                 ]
             ),
             download=False,
@@ -42,7 +42,12 @@ class MNISTDataModule(pl.LightningDataModule):
         self.test_dataset = datasets.MNIST(
             root=self.data_dir,
             train=False,
-            transform=transforms.ToTensor(),
+            transform=transforms.Compose(
+                [
+                    transforms.ToTensor(),
+                    discretize
+                ]
+            ),
             download=False
         )
 

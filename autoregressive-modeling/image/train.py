@@ -39,11 +39,12 @@ progress_bar = RichProgressBar(  ## wip
 if __name__ == "__main__":
     freeze_support()
 
-    logger = TensorBoardLogger("tensorboard_logs", name="pixelcnn_v1")
+    dataset_name = config.DATASET_NAME
+
+    logger = TensorBoardLogger("tensorboard_logs", name=f"pixelcnn_{dataset_name}")
     # strategy = DeepSpeedStrategy()
 
     # init datamodule
-    dataset_name = 'mnist'
     dm = None
     if dataset_name == 'mnist':
         dm = MNISTDataModule(config.DATA_DIR,
@@ -58,27 +59,27 @@ if __name__ == "__main__":
     model = PixelCNN(config.NUM_CHANNELS, config.NUM_HIDDENS)
 
     # init trainer
-    trainer = pl.Trainer(default_root_dir=os.path.join(config.CHECKPOINT_DIR, 'pixelcnn'),
-                         logger=logger,
+    trainer = pl.Trainer(logger=logger,
                          # strategy='ddp',
                          accelerator='gpu' if str(device) == 'cuda' else 'cpu',
                          devices=1, max_epochs=config.NUM_EPOCHS,
                          check_val_every_n_epoch=1,
-                         callbacks=[ModelCheckpoint(save_weights_only=True, mode='min', monitor='val_bpd'),
+                         callbacks=[ModelCheckpoint(mode='min', monitor='val_bpd',
+                                                    filename='pixelcnn-{epoch:02d}-{val_bpd:.2f}',
+                                                    dirpath=os.path.join(config.CHECKPOINT_DIR, 'pixelcnn'),
+                                                    verbose=False, save_last=True, save_top_k=5,
+                                                    save_on_train_epoch_end=True),
                                     LearningRateMonitor(logging_interval='epoch'),
                                     progress_bar])
 
     torch.set_float32_matmul_precision("medium")
-    trainer.fit(model, dm)
-
+    if os.path.exists(os.path.join(config.CHECKPOINT_DIR, 'pixelcnn', 'last.ckpt')):
+        trainer.fit(model, ckpt_path=os.path.join(config.CHECKPOINT_DIR, 'pixelcnn', 'last.ckpt'), datamodule=dm)
+    else:
+        trainer.fit(model, datamodule=dm)
     # test
     test_results = trainer.test(model, datamodule=dm)
 
-    # generation
-    pl.seed_everything(1)
-    generated_img = model.sample((16, config.NUM_CHANNELS, 28, 28))
-    save_image(generated_img, f'generated-{dataset_name}.png')
-    print(f"Image generated and saved as 'generated-{dataset_name}.png'")
 
 
 

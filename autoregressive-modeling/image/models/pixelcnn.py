@@ -31,19 +31,17 @@ class PixelCNN(pl.LightningModule):
 
         # final 1x1 convolution to map to the output channels
         self.conv_out = nn.Conv2d(num_hiddens, in_channels * 256, 1, padding=0)
-        self.example_input_array = torch.rand(1, in_channels, 28, 28)  # for MNIST
+        self.example_input_array = [torch.rand(3, in_channels, 32, 32), torch.randint(0, 10, (3,))]
 
-    def forward(self, x):
-        # scale the input to the range [-1, 1]
-        x = (x / 255.0) * 2 - 1
-
+    def forward(self, x, labels):
+        x = (x.float() / 255.0)  # normalize the input to [0, 1]
         # initial vertical and horizontal stacks
         vstack = self.vconv(x)
         hstack = self.hconv(x)
 
         # gated masked causal convolutions
         for gated_conv in self.gated_convs:
-            vstack, hstack = gated_conv(vstack, hstack)
+            vstack, hstack = gated_conv(vstack, hstack, labels)
 
         # output layer
         out = self.conv_out(F.elu(hstack))
@@ -53,58 +51,60 @@ class PixelCNN(pl.LightningModule):
 
         return out
 
-    def compute_likelihood(self, x):
+    def compute_likelihood(self, x, labels):
         # compute the likelihood of the input
-        preds = self.forward(x)
-        nll = F.cross_entropy(preds, x.long(), reduction='none')
+        preds = self.forward(x, labels)
+        nll = F.cross_entropy(preds, x, reduction='none')
         bpd = nll.mean(dim=[1, 2, 3]) * np.log2(np.exp(1))
 
         return bpd.mean()
 
     @torch.no_grad()
-    def sample(self, img_size, img=None):
+    def generate(self, labels, img_size, img=None):
         """
         Sample from the autoregressive model.
+        :param labels: labels for the generation
+        :param condition: condition for the generation
         :param img_size: size of the image to generate
         :param img: initial image to start the generation if given
         :return: generated image
         """
         if img is None:
-            img = torch.zeros(img_size).to(self.device) - 1
+            img = torch.zeros(img_size).to(self.device)
 
         # generation
         for h in tqdm(range(img_size[2]), desc='Generating', leave=False):
             for w in range(img_size[3]):
                 for c in range(img_size[1]):
-                    # skip if the pixel is already generated
-                    if (img[0, c, h, w] != -1).all().item():
-                        continue
                     # for efficient sampling, we only input the upper part of the image
-                    preds = self.forward(img[:, :, :h + 1, :])
+                    preds = self.forward(img[:, :, :h + 1, :], labels)
                     probs = F.softmax(preds[:, :, c, h, w], dim=-1)
                     img[:, c, h, w] = torch.multinomial(probs, 1).squeeze(-1)
 
-        # scale the image back to [0, 1]
-        img /= 255.0
-
-        return img
+        return img / 255.0
 
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.parameters(), lr=1e-3)
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.99)
+        optimizer = optim.Adam(self.parameters(), lr=1e-4)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.99)
         return [optimizer], [scheduler]
 
     def training_step(self, batch, batch_idx):
-        loss = self.compute_likelihood(batch[0])
+        images, labels = batch[0], batch[1]
+        # log input images
+        if batch_idx == 0:
+            self.logger.experiment.add_images('input_images', images[:8] / 255.0, self.current_epoch)
+        loss = self.compute_likelihood(images, labels)
         self.log('train_bpd', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        loss = self.compute_likelihood(batch[0])
+        images, labels = batch[0], batch[1]
+        loss = self.compute_likelihood(images, labels)
         self.log('val_bpd', loss)
         return loss
 
     def test_step(self, batch, batch_idx):
-        loss = self.compute_likelihood(batch[0])
+        images, labels = batch[0], batch[1]
+        loss = self.compute_likelihood(images, labels)
         self.log('test_bpd', loss)
         return loss

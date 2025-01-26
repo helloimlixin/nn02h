@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 
+
 class MaskedCausalConvolution(nn.Module):
     def __init__(self, in_channels, out_channels, mask, dilation=1):
         """
@@ -70,23 +71,26 @@ class CausalConvolutionHStack(MaskedCausalConvolution):
 
 
 class GatedMaskedCausalConvolution(nn.Module):
-    def __init__(self, in_channels, dilation=1):
+    def __init__(self, in_channels, dilation=1, num_classes=10):
         super().__init__()
         self.vconv = CausalConvolutionVStack(in_channels, 2 * in_channels)
         self.hconv = CausalConvolutionHStack(in_channels, 2 * in_channels)
+        self.cond_embedding = nn.Embedding(num_classes, 2 * in_channels)
         self.v2h = nn.Conv2d(2 * in_channels, 2 * in_channels, 1, padding=0)
         self.hconv_1x1 = nn.Conv2d(in_channels, in_channels, 1, padding=0)
 
-    def forward(self, vstack, hstack):
+    def forward(self, vstack, hstack, labels):
+        # condition embedding
+        cond = self.cond_embedding(labels)[:, :, None, None]
         # vertical stack computation on the left
-        vstack_features = self.vconv(vstack)
+        vstack_features = self.vconv(vstack) + cond
         vstack_val, vstack_gate = vstack_features.chunk(2, dim=1)
         vstack_out = torch.tanh(vstack_val) * torch.sigmoid(vstack_gate)  # element-wise multiplication
 
         # horizontal stack computation on the right
         hstack_features = self.hconv(hstack)
         # use horizontal stack as output
-        hstack_features = hstack_features + self.v2h(vstack_features)
+        hstack_features = hstack_features + self.v2h(vstack_features) + cond
         hstack_val, hstack_gate = hstack_features.chunk(2, dim=1)
         hstack_features = torch.tanh(hstack_val) * torch.sigmoid(hstack_gate)
         hstack_out = self.hconv_1x1(hstack_features)
