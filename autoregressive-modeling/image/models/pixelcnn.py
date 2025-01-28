@@ -19,10 +19,11 @@ def init_weights(m):
 
 
 class PixelCNN(pl.LightningModule):
-    def __init__(self, in_channels=256, num_hiddens=64, num_layers=15, num_classes=10):
+    def __init__(self, in_channels=512, num_hiddens=64, num_layers=15, num_classes=10):
         super().__init__()
         self.save_hyperparameters()  # save the hyperparameters to the checkpoint
 
+        self._in_channels = in_channels
         self.embedding = nn.Embedding(in_channels, num_hiddens)
 
         self.layers = nn.ModuleList()
@@ -44,6 +45,8 @@ class PixelCNN(pl.LightningModule):
             nn.Conv2d(512, in_channels, 1)
         )
 
+        self.ae = None
+
         self.apply(init_weights)
 
     def forward(self, x, labels):
@@ -62,7 +65,7 @@ class PixelCNN(pl.LightningModule):
         # compute the likelihood of the input
         logits = self.forward(x, labels)
         logits = logits.permute(0, 2, 3, 1).contiguous()
-        nll = F.cross_entropy(logits.view(-1, 256), target.view(-1), reduction='none').view_as(target)
+        nll = F.cross_entropy(logits.view(-1, self._in_channels), target.view(-1), reduction='none').view_as(target)
 
         bpd = nll.mean(dim=[1, 2]) / np.log(2)
 
@@ -99,22 +102,46 @@ class PixelCNN(pl.LightningModule):
         images, labels = batch[0], batch[1]
         # log input images
         if batch_idx == 0:
-            self.logger.experiment.add_images('input_images', images[:8] / 255.0, self.current_epoch)
-        images = (images[:, 0] * 255).long()
-        loss = self.compute_likelihood(images, labels)
+            self.logger.experiment.add_images('input_images', images[:8], self.current_epoch)
+        if self.ae is not None:
+            self.ae.eval()
+            latents = self.ae.encode(images).detach().long()
+            logits = self.forward(latents, labels)
+            logits = logits.permute(0, 2, 3, 1).contiguous()
+
+            loss = F.cross_entropy(logits.view(-1, self._in_channels), latents.view(-1))
+        else:
+            images = (images[:, 0] * 255).long()
+            loss = self.compute_likelihood(images, labels)
         self.log('train_bpd', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         images, labels = batch[0], batch[1]
-        images = (images[:, 0] * 255).long()
-        loss = self.compute_likelihood(images, labels)
+        # images = (images[:, 0] * 255).long()
+        if self.ae is not None:
+            latents = self.ae.encode(images).detach().long()
+            logits = self.forward(latents, labels)
+            logits = logits.permute(0, 2, 3, 1).contiguous()
+
+            loss = F.cross_entropy(logits.view(-1, self._in_channels), latents.view(-1))
+        else:
+            images = (images[:, 0] * 255).long()
+            loss = self.compute_likelihood(images, labels)
         self.log('val_bpd', loss)
         return loss
 
     def test_step(self, batch, batch_idx):
         images, labels = batch[0], batch[1]
-        images = (images[:, 0] * 255).long()
-        loss = self.compute_likelihood(images, labels)
+        # images = (images[:, 0] * 255).long()
+        if self.ae is not None:
+            latents = self.ae.encode(images).detach().long()
+            logits = self.forward(latents, labels)
+            logits = logits.permute(0, 2, 3, 1).contiguous()
+
+            loss = F.cross_entropy(logits.view(-1, self._in_channels), latents.view(-1))
+        else:
+            images = (images[:, 0] * 255).long()
+            loss = self.compute_likelihood(images, labels)
         self.log('test_bpd', loss)
         return loss

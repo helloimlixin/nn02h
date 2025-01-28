@@ -5,7 +5,7 @@ CHECKPOINT_DIR = "checkpoints"
 NUM_WORKERS = 0
 
 # Training Hyperparameters
-NUM_CHANNELS = 256
+NUM_CHANNELS = 512
 NUM_HIDDENS = 64
 LEARNING_RATE = 0.001
 BATCH_SIZE = 256
@@ -20,7 +20,7 @@ DEVICES = [0, 1]
 PRECISION = 32
 
 # Image
-IMAGE_SIZE = 28 if DATASET_NAME == "mnist" else 32
+IMAGE_SIZE = 7 if DATASET_NAME == "mnist" else 8
 NUM_SAMPLES = 64
 NUM_CLASSES = 10
 

@@ -28,7 +28,7 @@ class VectorQuantizer(nn.Module):
         encodings = torch.zeros(encoding_indices.shape[0], self._num_embeddings, device=inputs.device)
         encodings.scatter_(1, encoding_indices, 1)
 
-        return encodings
+        return encoding_indices
 
     def quantize(self, encodings):
         # Quantize and unflatten

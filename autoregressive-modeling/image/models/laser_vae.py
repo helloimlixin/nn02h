@@ -6,12 +6,17 @@ import lightning as pl
 from .utils import Encoder, Decoder
 from .laser import VectorQuantizer, VectorQuantizerEMA
 from torchvision.utils import make_grid
+import numpy as np
+
 
 class VQVAE(pl.LightningModule):
-    def __init__(self, in_channels=3, num_hiddens=128, num_residual_hiddens=32, quantizer = "Vanilla",
+    def __init__(self, in_channels=3, num_hiddens=256, num_residual_hiddens=32, quantizer = "Vanilla",
                  num_residual_layers=2, num_embeddings=512, embedding_dim=64, commitment_cost=0.25):
         super().__init__()
         self.save_hyperparameters()
+
+        self._num_embeddings = num_embeddings
+        self._embedding_dim = embedding_dim
 
         self.encoder = Encoder(in_channels, num_hiddens, num_residual_layers, num_residual_hiddens)
         self._pre_vq_conv = nn.Conv2d(num_hiddens, embedding_dim, 1, stride=1)
@@ -24,12 +29,20 @@ class VQVAE(pl.LightningModule):
     def encode(self, x):
         z = self.encoder(x)
         z = self._pre_vq_conv(z)
-        encodings = self.quantizer.encoding(z)
-        return encodings
 
-    def decode(self, encodings):
-        quantized = self.quantizer.quantize(encodings)  # B x D x H x W
+        encoding_indices = self.quantizer.code(z)
+        latent_dim = int(torch.sqrt(torch.tensor(self._embedding_dim)))
+        return encoding_indices.view(-1, latent_dim, latent_dim)
+
+    def decode(self, encoding_indices, shape=(8, 8)):
+        encoding_indices = encoding_indices.view(-1, self._embedding_dim).contiguous()
+        encodings = torch.zeros(encoding_indices.shape[0], self._num_embeddings, device=self.device)
+        encodings.scatter_(1, encoding_indices, 1)
+        quantized = self.quantizer.quantize(encodings).view(-1, *shape)
+
         decoded = self.decoder(quantized)
+
+        print(decoded.shape)
         return decoded
 
     def forward(self, x):
