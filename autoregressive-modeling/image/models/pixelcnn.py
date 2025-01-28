@@ -4,58 +4,67 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import lightning as pl
-from .utils import CausalConvolutionVStack, CausalConvolutionHStack, GatedMaskedCausalConvolution
+from .utils import GatedActivation, GatedMaskedCausalConv
 from tqdm.auto import tqdm
 
 
+def init_weights(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        try:
+            nn.init.xavier_uniform_(m.weight.data)
+            m.bias.data.fill_(0)
+        except AttributeError:
+            pass
+
+
 class PixelCNN(pl.LightningModule):
-    def __init__(self, in_channels, num_hiddens):
+    def __init__(self, in_channels=256, num_hiddens=64, num_layers=15, num_classes=10):
         super().__init__()
         self.save_hyperparameters()  # save the hyperparameters to the checkpoint
 
-        self.vconv = CausalConvolutionVStack(in_channels, num_hiddens, mask_center=True)
-        self.hconv = CausalConvolutionHStack(in_channels, num_hiddens, mask_center=True)
+        self.embedding = nn.Embedding(in_channels, num_hiddens)
+
+        self.layers = nn.ModuleList()
 
         # stack of gated masked causal convolutions with dilation
-        self.gated_convs = nn.ModuleList(
-            [
-                GatedMaskedCausalConvolution(num_hiddens),
-                GatedMaskedCausalConvolution(num_hiddens, dilation=2),
-                GatedMaskedCausalConvolution(num_hiddens),
-                GatedMaskedCausalConvolution(num_hiddens, dilation=4),
-                GatedMaskedCausalConvolution(num_hiddens),
-                GatedMaskedCausalConvolution(num_hiddens, dilation=2),
-                GatedMaskedCausalConvolution(num_hiddens)
-            ]
-        )
+        for i in range(num_layers):
+            mask_type = 'A' if i == 0 else 'B'
+            kernel_size = 7 if i == 0 else 3
+            residual = False if i == 0 else True
+
+            self.layers.append(
+                GatedMaskedCausalConv(mask_type, num_hiddens, kernel_size, residual, num_classes)
+            )
 
         # final 1x1 convolution to map to the output channels
-        self.conv_out = nn.Conv2d(num_hiddens, in_channels * 256, 1, padding=0)
-        self.example_input_array = [torch.rand(3, in_channels, 32, 32), torch.randint(0, 10, (3,))]
+        self.conv_out = nn.Sequential(
+            nn.Conv2d(num_hiddens, 512, 1),
+            nn.ReLU(),
+            nn.Conv2d(512, in_channels, 1)
+        )
+
+        self.apply(init_weights)
 
     def forward(self, x, labels):
-        x = (x.float() / 255.0)  # normalize the input to [0, 1]
-        # initial vertical and horizontal stacks
-        vstack = self.vconv(x)
-        hstack = self.hconv(x)
+        x_shape = x.size() + (-1,)
+        x = self.embedding(x.view(-1)).view(x_shape)
+        x = x.permute(0, 3, 1, 2)  # (B, C, H, W)
+        x_v, x_h = x, x
 
-        # gated masked causal convolutions
-        for gated_conv in self.gated_convs:
-            vstack, hstack = gated_conv(vstack, hstack, labels)
+        for layer in self.layers:
+            x_v, x_h = layer(x_v, x_h, labels)
 
-        # output layer
-        out = self.conv_out(F.elu(hstack))
-
-        # reshape the output to [Batch, Number of Classes, Number of Channels, Height, Width]
-        out = out.reshape(out.size(0), 256, out.size(1) // 256, out.size(2), out.size(3))
-
-        return out
+        return self.conv_out(x_h)
 
     def compute_likelihood(self, x, labels):
+        target = x
         # compute the likelihood of the input
-        preds = self.forward(x, labels)
-        nll = F.cross_entropy(preds, x, reduction='none')
-        bpd = nll.mean(dim=[1, 2, 3]) * np.log2(np.exp(1))
+        logits = self.forward(x, labels)
+        logits = logits.permute(0, 2, 3, 1).contiguous()
+        nll = F.cross_entropy(logits.view(-1, 256), target.view(-1), reduction='none').view_as(target)
+
+        bpd = nll.mean(dim=[1, 2]) / np.log(2)
 
         return bpd.mean()
 
@@ -70,18 +79,16 @@ class PixelCNN(pl.LightningModule):
         :return: generated image
         """
         if img is None:
-            img = torch.zeros(img_size).to(self.device)
+            img = torch.zeros(img_size, dtype=torch.long).to(self.device)
 
         # generation
-        for h in tqdm(range(img_size[2]), desc='Generating', leave=False):
-            for w in range(img_size[3]):
-                for c in range(img_size[1]):
-                    # for efficient sampling, we only input the upper part of the image
-                    preds = self.forward(img[:, :, :h + 1, :], labels)
-                    probs = F.softmax(preds[:, :, c, h, w], dim=-1)
-                    img[:, c, h, w] = torch.multinomial(probs, 1).squeeze(-1)
+        for h in tqdm(range(img_size[1]), desc='Generating', leave=False):
+            for w in range(img_size[2]):
+                logits = self.forward(img, labels)
+                probs = F.softmax(logits[:, :, h, w], dim=-1)
+                img[:, h, w] = torch.multinomial(probs, 1).squeeze(-1)
 
-        return img / 255.0
+        return img
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=1e-4)
@@ -93,18 +100,21 @@ class PixelCNN(pl.LightningModule):
         # log input images
         if batch_idx == 0:
             self.logger.experiment.add_images('input_images', images[:8] / 255.0, self.current_epoch)
+        images = (images[:, 0] * 255).long()
         loss = self.compute_likelihood(images, labels)
         self.log('train_bpd', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         images, labels = batch[0], batch[1]
+        images = (images[:, 0] * 255).long()
         loss = self.compute_likelihood(images, labels)
         self.log('val_bpd', loss)
         return loss
 
     def test_step(self, batch, batch_idx):
         images, labels = batch[0], batch[1]
+        images = (images[:, 0] * 255).long()
         loss = self.compute_likelihood(images, labels)
         self.log('test_bpd', loss)
         return loss

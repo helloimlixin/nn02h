@@ -6,10 +6,6 @@ from torch.utils.data import random_split, DataLoader
 from torchvision.utils import save_image, make_grid
 
 
-def discretize(x):
-    return (x * 255).clamp(0, 255).long()
-
-
 class CIFAR10DataModule(pl.LightningDataModule):
     def __init__(self, data_dir, batch_size=32, num_workers=0):
         super().__init__()
@@ -31,7 +27,6 @@ class CIFAR10DataModule(pl.LightningDataModule):
             transform=transforms.Compose(
                 [
                     transforms.ToTensor(),
-                    discretize
                 ]
             ),
             download=False,
@@ -52,7 +47,6 @@ class CIFAR10DataModule(pl.LightningDataModule):
             transform=transforms.Compose(
                 [
                     transforms.ToTensor(),
-                    discretize
                 ]
             ),
             download=False

@@ -2,100 +2,74 @@ import torch
 from torch import nn
 
 
-class MaskedCausalConvolution(nn.Module):
-    def __init__(self, in_channels, out_channels, mask, dilation=1):
-        """
-        Convolution kernel with mask applied to the weights to ensure causality.
-        :param in_channels: number of input channels
-        :param out_channels: number of output channels
-        :param mask: tensor of shape [kernel_size_H, kernel_size_W] with 0s for
-                        weights that should be masked and 1s for weights that should
-                        be kept.
-        """
+class GatedActivation(nn.Module):
+    def __init__(self):
         super().__init__()
-        kernel_size = (mask.size(0), mask.size(1))
-        padding = tuple([dilation * (kernel_size[0] - 1) // 2,
-                         dilation * (kernel_size[1] - 1) // 2])
-
-        # define the convolution layer
-        self.conv = nn.Conv2d(
-            in_channels, out_channels, kernel_size, padding=padding
-        )
-        # mask as buffer to ensure it is moved to the same device as the model
-        # and not treated as a model parameter
-        self.register_buffer("mask", mask[None, None])
 
     def forward(self, x):
-        self.conv.weight.data *= self.mask  # apply the mask
-        return self.conv(x)
+        val, gate = x.chunk(2, dim=1)
+        return torch.tanh(val) * torch.sigmoid(gate)
 
 
-class CausalConvolutionVStack(MaskedCausalConvolution):
-    def __init__(self, in_channels, out_channels, kernel_size=3, mask_center=False):
-        """
-        Vertical stack of causal convolution layers. The mask is applied to the weights to ensure causality,
-        which is applied to mask out all pixels below the current pixel.
-        :param in_channels: number of input channels
-        :param out_channels: number of output channels
-        :param kernel_size: size of the convolution kernel
-        :param mask_center: for the first convolutional layer, mask the center pixel
-        """
-        mask = torch.ones(kernel_size, kernel_size)
-        mask[kernel_size // 2 + 1:, :] = 0
-
-        # for the first layer, mask the center pixel
-        if mask_center:
-            mask[kernel_size // 2, :] = 0
-        super().__init__(in_channels, out_channels, mask)
-
-
-class CausalConvolutionHStack(MaskedCausalConvolution):
-    def __init__(self, in_channels, out_channels, kernel_size=3, mask_center=False):
-        """
-        Horizontal stack of causal convolution layers. The mask is applied to the weights to ensure causality,
-        which is applied to mask out all pixels to the left of the current pixel.
-        :param in_channels: number of input channels
-        :param out_channels: number of output channels
-        :param kernel_size: size of the convolution kernel, the kernel has a size of 1 in the vertical direction
-            because we only care about the horizontal direction
-        :param mask_center: for the first convolutional layer, mask the center pixel
-        """
-        mask = torch.ones(1, kernel_size)
-        mask[0, kernel_size // 2 + 1 :] = 0
-
-        # for the first layer, mask the center pixel
-        if mask_center:
-            mask[0, kernel_size // 2] = 0
-
-        super().__init__(in_channels, out_channels, mask)
-
-
-class GatedMaskedCausalConvolution(nn.Module):
-    def __init__(self, in_channels, dilation=1, num_classes=10):
+class GatedMaskedCausalConv(nn.Module):
+    def __init__(self, mask_type, dim, kernel, residual=True, n_classes=10):
         super().__init__()
-        self.vconv = CausalConvolutionVStack(in_channels, 2 * in_channels)
-        self.hconv = CausalConvolutionHStack(in_channels, 2 * in_channels)
-        self.cond_embedding = nn.Embedding(num_classes, 2 * in_channels)
-        self.v2h = nn.Conv2d(2 * in_channels, 2 * in_channels, 1, padding=0)
-        self.hconv_1x1 = nn.Conv2d(in_channels, in_channels, 1, padding=0)
+        assert kernel % 2 == 1, print("Kernel size must be odd")
+        self.mask_type = mask_type
+        self.residual = residual
 
-    def forward(self, vstack, hstack, labels):
-        # condition embedding
-        cond = self.cond_embedding(labels)[:, :, None, None]
-        # vertical stack computation on the left
-        vstack_features = self.vconv(vstack) + cond
-        vstack_val, vstack_gate = vstack_features.chunk(2, dim=1)
-        vstack_out = torch.tanh(vstack_val) * torch.sigmoid(vstack_gate)  # element-wise multiplication
+        self.class_cond_embedding = nn.Embedding(  # Embedding layer for class conditioning
+            n_classes, 2 * dim
+        )
 
-        # horizontal stack computation on the right
-        hstack_features = self.hconv(hstack)
-        # use horizontal stack as output
-        hstack_features = hstack_features + self.v2h(vstack_features) + cond
-        hstack_val, hstack_gate = hstack_features.chunk(2, dim=1)
-        hstack_features = torch.tanh(hstack_val) * torch.sigmoid(hstack_gate)
-        hstack_out = self.hconv_1x1(hstack_features)
-        hstack_out = hstack_out + hstack  # residual connection
+        self.vstack = nn.Conv2d(
+            dim, dim * 2,
+            (kernel // 2 + 1, kernel), 1, (kernel // 2, kernel // 2)
+        )
 
-        return vstack_out, hstack_out
+        self.v2h = nn.Conv2d(2 * dim, 2 * dim, 1)
+
+        self.hstack = nn.Conv2d(
+            dim, dim * 2,
+            (1, kernel // 2 + 1), 1, (0, kernel // 2)
+        )
+
+        self.hres = nn.Conv2d(dim, dim, 1)
+
+        self.gate = GatedActivation()
+
+    def make_causal(self):
+        """
+        Mask the final row of the vertical stack and the final column of the horizontal stack. Only used when
+        mask_type is 'A'.
+        :return: None
+        """
+        self.vstack.weight.data[:, :, -1].zero_()  # mask final row of vertical stack
+        self.hstack.weight.data[:, :, :, -1].zero_()  # mask final column of horizontal stack
+
+    def forward(self, x_v, x_h, labels):
+        if self.mask_type == 'A':
+            self.make_causal()
+
+        cond = self.class_cond_embedding(labels)
+        h_vert = self.vstack(x_v)
+        h_vert = h_vert[:, :, :x_v.size(-1), :]
+        out_v = self.gate(h_vert + cond[:, :, None, None])
+
+        h_horiz = self.hstack(x_h)
+        h_horiz = h_horiz[:, :, :, :x_h.size(-2)]
+        v2h = self.v2h(h_vert)
+
+        out = self.gate(v2h + h_horiz + cond[:, :, None, None])
+        if self.residual:
+            out_h = self.hres(out) + x_h
+        else:
+            out_h = self.hres(out)
+
+        return out_v, out_h
+
+
+class VectorQuantizer(nn.Module):
+    pass
 
 
