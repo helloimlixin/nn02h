@@ -18,8 +18,7 @@ if __name__ == "__main__":
     num_samples = config.NUM_SAMPLES
     label_indices = torch.randint(0, config.NUM_CLASSES, (config.NUM_SAMPLES,), device=model.device)
     samples = model.generate(label_indices, (config.NUM_SAMPLES, config.IMAGE_SIZE, config.IMAGE_SIZE))
-    images = samples.cpu().data.float() / 255.0
     print(f"Generated samples for classes: {', '.join([classes[i] for i in label_indices.cpu().numpy()])}")
 
     # save the sample at the first RGB channel
-    save_image(make_grid(images[:, None], nrow=int(np.sqrt(config.NUM_SAMPLES))), "sample.png")
+    save_image(make_grid(samples[:, None], nrow=int(np.sqrt(config.NUM_SAMPLES))), "sample.png")

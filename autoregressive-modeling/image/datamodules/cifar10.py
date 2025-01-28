@@ -33,7 +33,7 @@ class CIFAR10DataModule(pl.LightningDataModule):
         )
 
         # save first 8 images for visualization
-        images = [entire_dataset[i][0] / 255.0 for i in range(8)]
+        images = [entire_dataset[i][0] for i in range(8)]
         grid = make_grid(images, nrow=4)
         save_image(grid, "cifar10.png")
 
