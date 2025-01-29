@@ -106,9 +106,10 @@ class PixelCNN(pl.LightningModule):
             self.logger.experiment.add_images('input_images', images[:8], self.current_epoch)
         if autoencoder is not None:
             autoencoder.eval()
-            latents = autoencoder.encode(images).long()
+            latents, _ = autoencoder.encode(images)
             latents = latents.detach()
-            logits = self.forward(latents, labels)
+            latents = latents.view(-1, 8, 8)
+            logits = self.forward(latents.long(), labels)
             logits = logits.permute(0, 2, 3, 1).contiguous()
 
             loss = F.cross_entropy(logits.view(-1, self._in_channels), latents.view(-1)) / np.log(2)  # convert to bits per dim
@@ -123,9 +124,10 @@ class PixelCNN(pl.LightningModule):
         images, labels = batch[0], batch[1]
         if autoencoder is not None:
             autoencoder.eval()
-            latents = autoencoder.encode(images).long()
+            latents, _ = autoencoder.encode(images)
             latents = latents.detach()
-            logits = self.forward(latents, labels)
+            latents = latents.view(-1, 8, 8)
+            logits = self.forward(latents.long(), labels)
             logits = logits.permute(0, 2, 3, 1).contiguous()
 
             loss = F.cross_entropy(logits.view(-1, self._in_channels), latents.view(-1)) / np.log(2)
@@ -138,8 +140,10 @@ class PixelCNN(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         images, labels = batch[0], batch[1]
         if autoencoder is not None:
-            latents = autoencoder.encode(images).long()
-            logits = self.forward(latents.detach(), labels)
+            latents, _ = autoencoder.encode(images)
+            latents = latents.detach()
+            latents = latents.view(-1, 8, 8)
+            logits = self.forward(latents.long(), labels)
             logits = logits.permute(0, 2, 3, 1).contiguous()
 
             loss = F.cross_entropy(logits.view(-1, self._in_channels), latents.view(-1)) / np.log(2)
