@@ -58,8 +58,6 @@ if __name__ == "__main__":
 
     # init model
     model = PixelCNN(config.NUM_CHANNELS, config.NUM_HIDDENS)
-    model.ae = VQVAE.load_from_checkpoint("checkpoints/vae/last.ckpt")
-    model.ae.eval()
 
     # init trainer
     trainer = pl.Trainer(logger=logger,

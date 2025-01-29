@@ -27,30 +27,28 @@ class VQVAE(pl.LightningModule):
         self.decoder = Decoder(embedding_dim, num_hiddens, num_residual_layers, num_residual_hiddens)
 
     def encode(self, x):
+        """ Encodes an image into quantized latent representation indices. """
         z = self.encoder(x)
         z = self._pre_vq_conv(z)
+        encoding_indices = self.quantizer(z)
+        return encoding_indices, z
 
-        encoding_indices = self.quantizer.code(z)
-        latent_dim = int(torch.sqrt(torch.tensor(self._embedding_dim)))
-        return encoding_indices.view(-1, latent_dim, latent_dim)
+    def decode(self, encoding_indices):
+        """ Decodes quantized latent representation indices back into an image. """
+        quantized, encodings = self.quantizer.quantize(encoding_indices)
+        quantized = quantized.view(-1, 8, 8, self._embedding_dim)
+        # x_recon = self.decoder(quantized.permute(0, 3, 1, 2).contiguous())
 
-    def decode(self, encoding_indices, shape=(8, 8)):
-        encoding_indices = encoding_indices.view(-1, self._embedding_dim).contiguous()
-        encodings = torch.zeros(encoding_indices.shape[0], self._num_embeddings, device=self.device)
-        encodings.scatter_(1, encoding_indices, 1)
-        quantized = self.quantizer.quantize(encodings).view(-1, *shape)
-
-        decoded = self.decoder(quantized)
-
-        print(decoded.shape)
-        return decoded
+        return quantized, encodings
 
     def forward(self, x):
-        z = self.encoder(x)
-        z = self._pre_vq_conv(z)
-        loss, quantized, perplexity, encodings = self.quantizer(z)
-        decoded = self.decoder(quantized)
-        return loss, decoded, perplexity, encodings
+        """ Full forward pass of VQVAE (encode → quantize → decode). """
+        encoding_indices, z = self.encode(x)
+        quantized, encodings = self.decode(encoding_indices)
+        loss, quantized, perplexity, encodings = self.quantizer.loss(quantized, encodings, z)
+        x_recon = self.decoder(quantized)
+
+        return loss, x_recon, perplexity, encoding_indices
 
     def training_step(self, batch, batch_idx):
         x, _ = batch
@@ -64,6 +62,8 @@ class VQVAE(pl.LightningModule):
         x, _ = batch
         laser_loss, reconstruction, _, _ = self.forward(x)
         loss = laser_loss + F.mse_loss(reconstruction, x)
+        x = (x + 1) / 2
+        reconstruction = (reconstruction + 1) / 2
         self.log('val_loss', loss)
         self.logger.experiment.add_image("input_images", make_grid(x[:16], nrow=4), self.global_step)
         self.logger.experiment.add_image("reconstructed_images", make_grid(reconstruction[:16], nrow=4), self.global_step)
