@@ -112,7 +112,7 @@ class PixelCNN(pl.LightningModule):
             logits = self.forward(latents.long(), labels)
             logits = logits.permute(0, 2, 3, 1).contiguous()
 
-            loss = F.cross_entropy(logits.view(-1, self._in_channels), latents.view(-1)) / np.log(2)  # convert to bits per dim
+            loss = F.cross_entropy(logits.view(-1, self._in_channels), latents.view(-1))  # convert to bits per dim
         else:
             images = (images[:, 0] * 255).long()
             loss = self.compute_likelihood(images, labels)
@@ -130,7 +130,7 @@ class PixelCNN(pl.LightningModule):
             logits = self.forward(latents.long(), labels)
             logits = logits.permute(0, 2, 3, 1).contiguous()
 
-            loss = F.cross_entropy(logits.view(-1, self._in_channels), latents.view(-1)) / np.log(2)
+            loss = F.cross_entropy(logits.view(-1, self._in_channels), latents.view(-1))
         else:
             images = (images[:, 0] * 255).long()
             loss = self.compute_likelihood(images, labels)
@@ -146,7 +146,7 @@ class PixelCNN(pl.LightningModule):
             logits = self.forward(latents.long(), labels)
             logits = logits.permute(0, 2, 3, 1).contiguous()
 
-            loss = F.cross_entropy(logits.view(-1, self._in_channels), latents.view(-1)) / np.log(2)
+            loss = F.cross_entropy(logits.view(-1, self._in_channels), latents.view(-1))
         else:
             images = (images[:, 0] * 255).long()
             loss = self.compute_likelihood(images, labels)
