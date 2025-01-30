@@ -22,7 +22,7 @@ class TestWaveNet(TestCase):
         print(y.size())  # torch.Size([8, 1, 1938])
 
     def test_receptive_field(self):
-        print(self.model.receptive_field())  # 62
-        print(self.model.output_size(self.input))  # 1938
+        print(self.model.calculateReceptiveField())  # 62
+        print(self.model.calculateOutputSize(self.input))  # 1938
 
 

@@ -2,6 +2,7 @@
 from models.pixelcnn import PixelCNN
 from models.laser_vae import VQVAE
 import torch
+import torch.nn.functional as F
 from torchvision.utils import save_image, make_grid
 import config
 import numpy as np
@@ -21,11 +22,11 @@ label_indices = torch.randint(0, config.NUM_CLASSES, (config.NUM_SAMPLES,), devi
 latents = model.generate(label_indices, (config.NUM_SAMPLES, config.IMAGE_SIZE, config.IMAGE_SIZE)).view(-1, 1).contiguous()
 quantized, encodings = ae.decode(latents)
 quantized = quantized.view(-1, 8, 8, 64).permute(0, 3, 1, 2).contiguous()
-samples = ae.decoder(quantized).detach().cpu()
+samples = ae.decoder(quantized).detach()
 samples = (samples + 1) / 2
 print(f"Generated samples for classes: {', '.join([classes[i] for i in label_indices.cpu().numpy()])}")
 
 # save the sample at the first RGB channel
 latents = latents.view(-1, config.IMAGE_SIZE, config.IMAGE_SIZE) / 255.0
 save_image(make_grid(latents[:, None]), "latents.png")
-save_image(make_grid(samples, nrow=int(np.sqrt(config.NUM_SAMPLES))), "samples.png")
+save_image(make_grid(samples.cpu(), nrow=int(np.sqrt(config.NUM_SAMPLES))), "samples.png")

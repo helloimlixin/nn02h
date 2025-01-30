@@ -1,53 +1,51 @@
-from typing import Any
-
 import lightning as pl
 import torch
-import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
-
-from .utils import ResidualBlock, CausalDilatedConv1D, build_dilations, ResidualStack, DenseLayer
-
+from .utils import WaveNetModule
 
 class WaveNet(pl.LightningModule):
-    def __init__(self, in_channels, out_channels, kernel_size, num_blocks, num_layers):
+    def __init__(self, in_channels, residual_channels, skip_channels, num_blocks):
         super(WaveNet, self).__init__()
 
-        self._in_channels = in_channels
-        self._out_channels = out_channels
-        self._kernel_size = kernel_size
-        self._num_blocks = num_blocks
-        self._num_layers = num_layers
+        self.net = WaveNetModule(in_channels, residual_channels, skip_channels, num_blocks)
 
-        self.causal_conv1d = CausalDilatedConv1D(in_channels, in_channels, kernel_size, dilation=1)
-        # residual_channels, skip_channels, kernel_size, num_blocks, num_layers
-        self.residual_stack = ResidualStack(in_channels, out_channels, kernel_size, num_blocks, num_layers)
-
-        self.dense = DenseLayer(out_channels, out_channels)
-
-    def receptive_field(self):
-        return sum([2 **  layer for layer in range(self._num_layers)] * self._num_blocks)
-
-    def output_size(self, x):
-        return int(x.size(2)) - self.receptive_field()
-
-    def forward(self, x):
-        x = self.causal_conv1d(x)
-        skip = self.output_size(x)
-        x, skip_outputs = self.residual_stack(x, skip)
-
-        return self.dense(skip_outputs)
-
-    def training_step(self, batch, batch_idx):
-        x, y = batch
-        y_hat = self(x)
-        loss = nn.CrossEntropyLoss()(y_hat, y)
+    def _inference_step(self, batch):
+        batch = batch.unsqueeze(1).to(torch.float32)
+        outputs = self.net(batch)
+        targets = batch[:, :, 1:]
+        loss = F.cross_entropy(outputs[:, :, :-1], targets)
         return loss
 
-    def validation_step(self, *args: Any, **kwargs: Any):
-        return self.training_step(*args, **kwargs)
+    @torch.no_grad()
+    def generate_audio(self, seed, num_samples):
+        self.eval()
+        generated = seed  # Initial waveform seed
 
-    def test_step(self, *args: Any, **kwargs: Any):
-        return self.training_step(*args, **kwargs)
+        for _ in range(num_samples):
+            with torch.no_grad():
+                output = self.forward(generated.unsqueeze(0).unsqueeze(0))  # Add batch and channel dims
+                next_sample = output[:, :, -1].argmax(dim=1)  # Get most likely next value
+                generated = torch.cat([generated, next_sample], dim=-1)  # Append prediction
+
+        return generated
+
+    def training_step(self, batch, batch_idx):
+        loss = self._inference_step(batch)
+
+        self.log_dict({'train_loss': loss},
+                        on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        loss = self._inference_step(batch)
+        self.log('val_loss', loss)
+        return loss
+
+    def test_step(self, batch, batch_idx):
+        loss = self._inference_step(batch)
+        self.log('test_loss', loss)
+        return loss
 
     def configure_optimizers(self):
         return optim.Adam(self.parameters(), lr=1e-3)
