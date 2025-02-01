@@ -83,7 +83,7 @@ logger = CSVLogger("logs", name="imdb-sentiment")
 
 # define the trainer
 trainer = pl.Trainer(
-    max_epochs=50,
+    max_epochs=100,
     callbacks=callbacks,
     accelerator="gpu",
     devices=1,
