@@ -17,7 +17,8 @@ class IMDBSentimentClassifier(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         outputs = self(batch["input_ids"], attention_mask=batch["attention_mask"], labels=batch["label"])
         loss = outputs["loss"]
-        self.log("train_loss", loss)
+        self.log("train_loss", loss,
+                 on_step=True, on_epoch=True, prog_bar=True)
         return loss  # passed to optimizer for backpropagation step (training)
 
     def validation_step(self, batch, batch_idx):
